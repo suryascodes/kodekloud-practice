@@ -1,0 +1,233 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: countdown-datacenter
+spec:
+  template:
+	metadata:
+      name: countdown-datacenter
+    spec:
+      containers:
+      - name: container-countdown-datacenter
+        image: fedora:latest
+        command: ["sleep","5"]
+      restartPolicy: Never
+	  
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: datacenter
+  labels:
+    name: datacenter
+	
+apiVersion: v1
+kind: Pod
+metadata:
+  name: time-check
+spec:
+  containers:
+  - name: time-check
+    image: busybox:latest
+    
+------------------------sidecar-container
+
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: webserver  # This is the name of the Kubernetes Pod.
+
+spec:
+  restartPolicy: Never  # Specifies that containers in the Pod should not be restarted automatically.
+
+  volumes:
+    - name: shared-logs  # Defines an emptyDir volume named 'shared-data' for sharing data between containers.
+      emptyDir: {}  # An empty directory that containers can use to share data.
+
+  containers:
+    - name: nginx-container  # Nginx container for serving web content.
+      image: nginx:latest  # The Docker image to use for the Nginx container.
+      volumeMounts:
+        - name: shared-logs  # Mounts the 'shared-data' volume inside the Nginx container.
+          mountPath: /var/log/nginx  # The path where Nginx serves content.
+
+    - name: sidecar-container  # Ubuntu container for data manipulation.
+      image: ubuntu:latest  # The Docker image to use for the Ubuntu container.
+      volumeMounts:
+        - name: shared-logs  # Mounts the 'shared-data' volume inside the Ubuntu container.
+          mountPath: /var/log/nginx  # The path within the Ubuntu container for working with shared data.
+      command: ["/bin/sh"]  # Specifies the command to run within the Ubuntu container.
+      args: ["-c", "while true; do cat /var/log/nginx/access.log /var/log/nginx/error.log; sleep 30; done"]  # Command arguments to create an HTML file    
+      
+------------------ webserver deploy and service
+        
+apiVersion: v1
+kind: Service
+metadata:
+  name: nginx-service
+spec:
+  type: NodePort
+  selector:
+    app: nginx
+  ports:
+    - port: 80
+      # By default and for convenience, the `targetPort` is set to
+      # the same value as the `port` field.
+      targetPort: 80
+      # Optional field
+      # By default and for convenience, the Kubernetes control plane
+      # will allocate a port from a range (default: 30000-32767)
+      nodePort: 30011
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: print-envars-greeting
+spec:
+  containers:
+  - name: print-env-container
+    image: bash
+    command: ["/bin/sh"]
+    args: ["-c", 'echo "$(GREETING) $(COMPANY) $(GROUP)"']
+    ports:
+    - containerPort: 80
+    env:
+    - name: GREETING
+      value: "Welcome to"
+    - name: COMPANY
+      value: "Stratos"
+    - name: GROUP
+      value: "Group"
+  restartPolicy: OnFailure
+  
+Docker:
+ docker network create -d bridge media --driver=bridge --subnet=172.28.0.0/24 --ip-range=172.28.0.0/24
+ 
+ docker run -d --name ecommerce -v /opt/data:/tmp nginx:latest
+ docker run -d --name official -p 6100:80 nginx:alpine
+ 
+ 
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: httpd-deploy
+  labels:
+    app: httpd
+spec:
+  replicas: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 2
+  selector:
+    matchLabels:
+      app: httpd
+  template:
+    metadata:
+      labels:
+        app: httpd
+    spec:
+      containers:
+      - name: httpd
+        image: httpd:2.4.25
+        ports:
+        - containerPort: 80
+        
+apiVersion: v1
+kind: Service
+metadata:
+  name: httpd-service
+spec:
+  type: NodePort
+  selector:
+    app: httpd
+  ports:
+    - port: 80
+      # By default and for convenience, the `targetPort` is set to
+      # the same value as the `port` field.
+      targetPort: 80
+      # Optional field
+      # By default and for convenience, the Kubernetes control plane
+      # will allocate a port from a range (default: 30000-32767)
+      nodePort: 30008
+
+kubectl set image deployment/httpd-deploy nginx=nginx:2.4.43
+
+kubectl rollout history deployment/httpd-deploy -n xfusion
+
+kubectl rollout undo deployment/httpd-deploy -n xfusion
+
+--------------grafana deploy
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: grafana-deployment-xfusion
+  labels:
+    app: grafana
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: grafana
+  template:
+    metadata:
+      labels:
+        app: grafana
+    spec:
+      containers:
+      - name: grafana
+        image: grafana/grafana:latest
+        ports:
+        - containerPort: 3000
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: grafana-service
+spec:
+  type: NodePort
+  selector:
+    app: grafana
+  ports:
+    - port: 3000
+      # By default and for convenience, the `targetPort` is set to
+      # the same value as the `port` field.
+      targetPort: 3000
+      # Optional field
+      # By default and for convenience, the Kubernetes control plane
+      # will allocate a port from a range (default: 30000-32767)
+      nodePort: 32000
+      
+---------init-container
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ic-deploy-datacenter
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ic-datacenter
+  template:
+    metadata:
+      labels:
+        app: ic-datacenter
+    spec:
+      initContainers:
+      - name: ic-msg-datacenter
+        image: centos:latest
+        command: ['/bin/bash', '-c', 'echo Init Done - Welcome to xFusionCorp Industries > /ic/beta']
+        volumeMounts:
+        - name: ic-volume-datacenter
+          mountPath: /ic
+      containers:
+      - name: ic-main-datacenter
+        image: centos:latest
+        command: ['/bin/bash', '-c', 'while true; do cat /ic/beta; sleep 5; done']
+        volumeMounts:
+        - name: ic-volume-datacenter
+          mountPath: /ic
+      volumes:
+      - name: ic-volume-datacenter
+        emptyDir: {}
